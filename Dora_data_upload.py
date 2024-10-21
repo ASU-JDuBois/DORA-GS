@@ -12,14 +12,17 @@ local_start_time = input("Enter the local start time (format HH:MM:SS): ")
 local_start_datetime = datetime.strptime(local_start_time, "%H:%M:%S")
 
 # Step C: Ask for the data in multiline input
-print("Enter the data pairs (time, data, blank line). Type 'END' on a new line when finished:")
+print("Enter the data pairs (time, data, blank line). Type 'Q' to quit or 'END' on a new line when finished:")
 
-# Read multiline input until the user types 'END'
+# Read multiline input until the user types 'END' or "Q" to quit
 data_input = []
 while True:
     time_line = input()
     if time_line.strip().upper() == "END":
         break
+    if time_line.strip().upper() == "Q":
+        print("Exiting without sending data.")
+        exit()
     data_line = input()
     blank_line = input()
 
@@ -35,7 +38,9 @@ for time_line, data_line in data_input:
     time_match = time_pattern.search(time_line)
     if time_match:
         offset_time_str = time_match.group(1)  # Extract time offset (HH:MM:SS)
-        parsed_data.append((offset_time_str, data_line))
+        # Remove spaces from the data packet to match the expected API format
+        data_line_clean = ''.join(data_line.split())
+        parsed_data.append((offset_time_str, data_line_clean))
 
 # Verify if we have parsed data
 if not parsed_data:
@@ -68,11 +73,12 @@ else:
 # Convert the pass start time into a datetime object, handling the 'Z' for UTC time
 pass_start_datetime = datetime.strptime(pass_start_time, "%Y-%m-%dT%H:%M:%SZ")
 
-# Step E: Generate URLs for each data packet
+# Step E: Upload the cleaned data
 upload_base_url = "https://db.satnogs.org/api/telemetry/"
-norad_id = 61502
+norad_id = "61502"
+source_name = "rommac-uhf-testing"  # Example source name
 
-print("\nGenerated URLs for uploading telemetry data:")
+print("\nUploading telemetry data:")
 for offset_time_str, data_packet in parsed_data:
     # Parse the offset time into a datetime object
     offset_time = datetime.strptime(offset_time_str, "%H:%M:%S")
@@ -88,12 +94,26 @@ for offset_time_str, data_packet in parsed_data:
     final_timestamp = pass_start_datetime + time_difference
     timestamp_str = final_timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Construct the URL
-    upload_url = (
-        f"{upload_base_url}?"
-        f"satellite={norad_id}&"
-        f"timestamp={timestamp_str}&"
-        f"frame={data_packet}&"
-        f"locator={station_lat},{station_lng}"
-    )
-    print(upload_url)
+    # Construct the payload for the POST request
+    payload = {
+        "noradID": norad_id,
+        "source": source_name,
+        "timestamp": timestamp_str,
+        "frame": data_packet,  # Cleaned data without spaces
+        "locator": f"{station_lat},{station_lng}",
+        "longitude": "111.980E",  # Example longitude, adjust if needed
+        "latitude": "33.645N"     # Example latitude, adjust if needed
+    }
+
+    # Print the payload for debugging
+    print("Payload:", payload)
+
+    # Send the POST request with the form data
+    response = requests.post(upload_base_url, data=payload)
+
+    # Check if the POST request was successful
+    if response.status_code == 201:
+        print("Data uploaded successfully!")
+    else:
+        print(f"Failed to upload data. Status code: {response.status_code}")
+        print(f"Response: {response.text}")
